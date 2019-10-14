@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 class Graph():
@@ -14,18 +15,18 @@ class Graph():
     # ` (0.0) ------------------------- (1.0)  `
     # `                 (1.0)                  `
     # ```````````````````````````````````````````
-    LEFT_X_BOTTOM_COEF = 0.15
+    LEFT_X_BOTTOM_COEF = 0.1428571429
     RIGHT_X_BOTTOM_COEF = 1.0 - LEFT_X_BOTTOM_COEF
-    LEFT_X_TOP_COEF = 0.449
+    LEFT_X_TOP_COEF = 0.45
     RIGHT_X_TOP_COEF = 1.0 - LEFT_X_TOP_COEF
-    Y_TOP_COEF = 0.65
+    Y_TOP_COEF = 0.642857142857143
     Y_BOTTOM_COEF = 1.0
 
     SOURCE_COEFFS = (LEFT_X_BOTTOM_COEF, RIGHT_X_BOTTOM_COEF,
                      LEFT_X_TOP_COEF, RIGHT_X_TOP_COEF,
                      Y_TOP_COEF, Y_BOTTOM_COEF)
 
-    DESTINATION_COEFFS = (0.25, 0.75, LEFT_X_TOP_COEF, RIGHT_X_TOP_COEF,
+    DESTINATION_COEFFS = (0.166666666666667, 0.833333333333333, LEFT_X_TOP_COEF, RIGHT_X_TOP_COEF,
                           Y_TOP_COEF, Y_BOTTOM_COEF)
 
     CLAHE = None
@@ -313,9 +314,43 @@ class Graph():
         return np.concatenate(images, axis=1)
 
     @staticmethod
+    def fit_polynomial(binary_warped):
+        # Find our lane pixels first
+        left_points, right_points, out_img = Graph.find_lane_pixels(binary_warped)
+        # print(left_points)
+        # print(right_points)
+
+        ### TO-DO: Fit a second order polynomial to each using `np.polyfit` ###
+        if (len(left_points)>=3):
+            left_fit = np.polyfit(left_points[:,1], left_points[:,0], deg=2)
+            # print(left_fit)
+        if (len(right_points)>=3):
+            right_fit = np.polyfit(right_points[:,1], right_points[:,0], deg=2)
+            # print(right_fit)
+
+        # Generate x and y values for plotting
+        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        try:
+            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+        except TypeError:
+            # Avoids an error if `left` and `right_fit` are still none or incorrect
+            print('The function failed to fit a line!')
+            left_fitx = 1 * ploty ** 2 + 1 * ploty
+            right_fitx = 1 * ploty ** 2 + 1 * ploty
+
+        # Plots the left and right polynomials on the lane lines
+        # plt.plot(left_fitx, ploty, color='yellow')
+        # plt.plot(right_fitx, ploty, color='yellow')
+
+        out_img = Graph.draw_lanes(out_img, left_fitx, right_fitx)
+
+        return out_img
+
+    @staticmethod
     def find_lane_pixels(binary_warped: np.ndarray):
         # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
+        histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0)
 
         # Create an output image to draw on and visualize the result
         out_img = np.dstack((binary_warped, binary_warped, binary_warped))
@@ -327,7 +362,7 @@ class Graph():
 
         # HYPERPARAMETERS
         # Choose the number of sliding windows
-        nwindows = 9
+        nwindows = 15
         # Set the width of the windows +/- margin
         margin = 100
         # Set minimum number of pixels found to recenter window
@@ -348,15 +383,14 @@ class Graph():
         rightx_current = rightx_base
 
         # Create empty lists to receive left and right lane pixel indices
-        left_lane_inds = []
-        right_lane_inds = []
+        left_lane_points = []
+        right_lane_points = []
 
         # Step through the windows one by one
         for window in range(nwindows):
             # Identify window boundaries in x and y (and right and left)
             win_y_low = binary_warped.shape[0] - (window + 1) * window_height
             win_y_high = binary_warped.shape[0] - window * window_height
-            ### TO-DO: Find the four below boundaries of the window ###
             win_xleft_low = leftx_current - margin
             win_xleft_high = leftx_current + margin
             win_xright_low = rightx_current - margin
@@ -388,83 +422,45 @@ class Graph():
             elif ((l_x_index is not None) and (r_x_index is None)):
                 r_x_index = l_x_index + prev_lane_dist
 
-            # yellow center points
-            cv2.circle(out_img, (l_x_index, y_index), 2, yellow_color, thickness=2, lineType=8)
-            cv2.circle(out_img, (r_x_index, y_index), 2, yellow_color, thickness=2, lineType=8)
+            l_point = (l_x_index, y_index)
+            r_point = (r_x_index, y_index)
 
-            # Draw the windows on the visualization image
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+            left_lane_points.append(l_point)
+            right_lane_points.append(r_point)
 
-            ### TO-DO: Identify the nonzero pixels in x and y within the window ###
-            left_group = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (
-                        nonzerox < win_xleft_high))
-            good_left_inds = left_group.nonzero()[0]
-            right_group = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xright_low) & (
-                        nonzerox < win_xright_high))
-            good_right_inds = right_group.nonzero()[0]
-
-            left_point = ((nonzeroy == y_index) & (nonzerox == l_x_index))
-            right_point = ((nonzeroy == y_index) & (nonzerox == r_x_index))
-
-            # Append these indices to the lists
-            left_lane_inds.append(left_point)
-            right_lane_inds.append(right_point)
-
-            ### TO-DO: If you found > minpix pixels, recenter next window ###
-            if (len(good_left_inds) > minpix):
-                leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
-            if (len(good_right_inds) > minpix):
-                rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
+            leftx_current = l_x_index
+            rightx_current = r_x_index
 
             ## Visualization ##
             # Colors in the left and right lane regions
-            out_img[nonzeroy[good_left_inds], nonzerox[good_left_inds]] = [255, 0, 0]
-            out_img[nonzeroy[good_right_inds], nonzerox[good_right_inds]] = [0, 0, 255]
+            # Draw the windows on the visualization image
+            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
             # yellow center points
-            cv2.circle(out_img, (l_x_index, y_index), 2, yellow_color, thickness=2, lineType=8)
-            cv2.circle(out_img, (r_x_index, y_index), 2, yellow_color, thickness=2, lineType=8)
+            cv2.circle(out_img, l_point, 2, yellow_color, thickness=2, lineType=8)
+            cv2.circle(out_img, r_point, 2, yellow_color, thickness=2, lineType=8)
 
-        # Concatenate the arrays of indices (previously was a list of lists of pixels)
-        try:
-            left_lane_inds = np.concatenate(left_lane_inds)
-            right_lane_inds = np.concatenate(right_lane_inds)
-        except ValueError:
-            # Avoids an error if the above is not implemented fully
-            pass
-
-        # Extract left and right line pixel positions
-        leftx = nonzerox[left_lane_inds]
-        lefty = nonzeroy[left_lane_inds]
-        rightx = nonzerox[right_lane_inds]
-        righty = nonzeroy[right_lane_inds]
-
-        return leftx, lefty, rightx, righty, out_img
+        return np.array(left_lane_points), np.array(right_lane_points), out_img
 
     @staticmethod
-    def fit_polynomial(binary_warped):
-        # Find our lane pixels first
-        leftx, lefty, rightx, righty, out_img = Graph.find_lane_pixels(binary_warped)
-
-        ### TO-DO: Fit a second order polynomial to each using `np.polyfit` ###
-        left_fit = np.polyfit(lefty, leftx, deg=2)
-        # print(left_fit)
-        right_fit = np.polyfit(righty, rightx, deg=2)
-        # print(right_fit)
-
-        # Generate x and y values for plotting
+    def draw_lanes(binary_warped: np.ndarray, left_fitx: np.ndarray, right_fitx: np.ndarray):
         ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
-        try:
-            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-        except TypeError:
-            # Avoids an error if `left` and `right_fit` are still none or incorrect
-            print('The function failed to fit a line!')
-            left_fitx = 1 * ploty ** 2 + 1 * ploty
-            right_fitx = 1 * ploty ** 2 + 1 * ploty
 
-        # Plots the left and right polynomials on the lane lines
-        # plt.plot(left_fitx, ploty, color='yellow')
-        # plt.plot(right_fitx, ploty, color='yellow')
+        red_color = [255, 0, 0]
+        blue_color = [0,0, 255]
+        thickness = 3
 
-        return out_img
+        for point in range(ploty.shape[0]):
+            y = int(ploty[point])
+
+            # draw right line
+            x = int(right_fitx[point])
+            # print(x, y)
+            binary_warped[y - thickness:y+thickness, x - thickness:x + thickness,:] = red_color
+
+            # draw left line
+            x = int(left_fitx[point])
+            # print(x, y)
+            binary_warped[y - thickness:y + thickness, x - thickness:x + thickness, :] = blue_color
+
+        return binary_warped

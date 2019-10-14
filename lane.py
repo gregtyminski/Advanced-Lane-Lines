@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from camera import Camera
 from graph import Graph
 
@@ -24,6 +25,7 @@ class Lane():
     def edge_detection(self, image: np.ndarray):
         # change to grayscale
         gray = Graph.to_grayscale(image)
+        
         # find gradient over X
         gradx = Graph.abs_sobel_thresh(gray, orient='x', sobel_kernel=3, thresh=(30, 100))
         # find gradient over Y
@@ -56,7 +58,7 @@ class Lane():
 
         unbrightned = Graph.adjust_brightness(undistorted)
         # detect edges
-        combined = lane.edge_detection(unbrightned)
+        combined = self.edge_detection(unbrightned)
 
         # change perspective
         warped, M = Graph.get_perspective_transform(combined)
