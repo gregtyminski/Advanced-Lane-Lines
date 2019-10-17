@@ -227,11 +227,14 @@ class Graph():
         cv2.line(image, (point4[0], point4[1]), (point1[0], point1[1]), color, thickness)
 
     @staticmethod
-    def get_perspective_transform(image: np.ndarray):
+    def get_perspective_transform(image: np.ndarray, reverse: bool = False):
         image_shape = image.shape
         src = Graph.vertices_for_region(image_shape, Graph.SOURCE_COEFFS)
         dst = Graph.destination_vertices(image_shape, Graph.DESTINATION_COEFFS)
-        M = cv2.getPerspectiveTransform(src, dst)
+        if not reverse:
+            M = cv2.getPerspectiveTransform(src, dst)
+        else:
+            M = cv2.getPerspectiveTransform(dst, src)
         xs, ys = image.shape[1], image.shape[0]
         warped = cv2.warpPerspective(image, M, (xs, ys), flags=cv2.INTER_LINEAR)
         return warped, M
@@ -316,17 +319,14 @@ class Graph():
     @staticmethod
     def fit_polynomial(binary_warped):
         # Find our lane pixels first
-        left_points, right_points, out_img = Graph.find_lane_pixels(binary_warped)
-        # print(left_points)
-        # print(right_points)
+        left_points, right_points, out_img, avg_lane_dist, midpoint, leftx_base, rightx_base = Graph.find_lane_pixels(binary_warped)
 
-        ### TO-DO: Fit a second order polynomial to each using `np.polyfit` ###
-        if (len(left_points)>=3):
+        # fit 2nd order left line
+        if len(left_points)>=3:
             left_fit = np.polyfit(left_points[:,1], left_points[:,0], deg=2)
-            # print(left_fit)
-        if (len(right_points)>=3):
+        # fit 2nd order right line
+        if len(right_points)>=3:
             right_fit = np.polyfit(right_points[:,1], right_points[:,0], deg=2)
-            # print(right_fit)
 
         # Generate x and y values for plotting
         ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
@@ -339,13 +339,7 @@ class Graph():
             left_fitx = 1 * ploty ** 2 + 1 * ploty
             right_fitx = 1 * ploty ** 2 + 1 * ploty
 
-        # Plots the left and right polynomials on the lane lines
-        # plt.plot(left_fitx, ploty, color='yellow')
-        # plt.plot(right_fitx, ploty, color='yellow')
-
-        out_img = Graph.draw_lanes(out_img, left_fitx, right_fitx)
-
-        return out_img
+        return out_img, left_fit, left_fitx, right_fit, right_fitx, ploty, avg_lane_dist, midpoint, leftx_base, rightx_base
 
     @staticmethod
     def find_lane_pixels(binary_warped: np.ndarray):
@@ -357,7 +351,9 @@ class Graph():
         # Find the peak of the left and right halves of the histogram
         # These will be the starting point for the left and right lines
         midpoint = np.int(histogram.shape[0] // 2)
+        # initial position of left line on warped image
         leftx_base = np.argmax(histogram[:midpoint])
+        # initial position of right line on warped image
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
         # HYPERPARAMETERS
@@ -367,8 +363,10 @@ class Graph():
         margin = 100
         # Set minimum number of pixels found to recenter window
         minpix = 50
-
+        # we need to track previous distance between lines to be able to approximate the mid points and right track of lines
         prev_lane_dist = rightx_base - leftx_base
+        # we need to track all distances between lines to calculate average distance
+        lane_dist_hist = [prev_lane_dist]
 
         yellow_color = (255, 255, 153)
 
@@ -406,20 +404,21 @@ class Graph():
             y_index = int((win_y_low + win_y_high) / 2)
 
             # didn't find center
-            if (l_x_index == win_xleft_low):
+            if l_x_index == win_xleft_low:
                 l_x_index = None
-            if (r_x_index == win_xright_low):
+            if r_x_index == win_xright_low:
                 r_x_index = None
             # finding distance and keep it
-            if ((l_x_index is not None) and (r_x_index is not None)):
+            if (l_x_index is not None) and (r_x_index is not None):
                 prev_lane_dist = (r_x_index - l_x_index)
+                lane_dist_hist.append(prev_lane_dist)
             # adjusting lane
-            elif ((l_x_index is None) and (r_x_index is None)):
+            elif (l_x_index is None) and (r_x_index is None):
                 l_x_index = int((win_xleft_low + win_xleft_high) / 2)  # guessing value
                 r_x_index = int((win_xright_low + win_xright_high) / 2)  # guessing value
-            elif ((l_x_index is None) and (r_x_index is not None)):
+            elif (l_x_index is None) and (r_x_index is not None):
                 l_x_index = r_x_index - prev_lane_dist
-            elif ((l_x_index is not None) and (r_x_index is None)):
+            elif (l_x_index is not None) and (r_x_index is None):
                 r_x_index = l_x_index + prev_lane_dist
 
             l_point = (l_x_index, y_index)
@@ -434,13 +433,14 @@ class Graph():
             ## Visualization ##
             # Colors in the left and right lane regions
             # Draw the windows on the visualization image
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+            # cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+            # cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
             # yellow center points
             cv2.circle(out_img, l_point, 2, yellow_color, thickness=2, lineType=8)
             cv2.circle(out_img, r_point, 2, yellow_color, thickness=2, lineType=8)
 
-        return np.array(left_lane_points), np.array(right_lane_points), out_img
+        avg_lane_dist = np.average(lane_dist_hist)
+        return np.array(left_lane_points), np.array(right_lane_points), out_img, avg_lane_dist, midpoint, leftx_base, rightx_base
 
     @staticmethod
     def draw_lanes(binary_warped: np.ndarray, left_fitx: np.ndarray, right_fitx: np.ndarray):
@@ -448,19 +448,21 @@ class Graph():
 
         red_color = [255, 0, 0]
         blue_color = [0,0, 255]
-        thickness = 3
+        green_color = [0, 255, 0]
+        thickness = 5
 
-        for point in range(ploty.shape[0]):
-            y = int(ploty[point])
+        l_points = np.vstack((left_fitx, ploty)).T
+        r_points = np.vstack((right_fitx, ploty)).T
 
-            # draw right line
-            x = int(right_fitx[point])
-            # print(x, y)
-            binary_warped[y - thickness:y+thickness, x - thickness:x + thickness,:] = red_color
+        # draw both lines
+        pts = np.array(l_points, np.int32)
+        cv2.polylines(binary_warped, [pts], False, red_color, thickness)
+        pts = np.array(r_points, np.int32)
+        cv2.polylines(binary_warped, [pts], False, blue_color, thickness)
 
-            # draw left line
-            x = int(left_fitx[point])
-            # print(x, y)
-            binary_warped[y - thickness:y + thickness, x - thickness:x + thickness, :] = blue_color
-
+        # fill area between
+        all_points = np.vstack((l_points, np.flipud(r_points)))
+        pts = np.array(all_points, np.int32)
+        #print(pts.shape)
+        cv2.fillConvexPoly(binary_warped, pts, green_color)
         return binary_warped
