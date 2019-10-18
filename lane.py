@@ -24,6 +24,8 @@ class Lane():
         self.lane_length_m = lane_length_m
         # visible lane distance in px
         self.lane_length_px = None
+        # history of curvature
+        self.curvature_hist = []
 
     def get_region(self, image: np.ndarray):
         if self.region_vertices is None:
@@ -37,22 +39,22 @@ class Lane():
     def edge_detection(self, image: np.ndarray):
         # change to grayscale
         gray = Graph.to_grayscale(image)
-        
+
         # find gradient over X
-        gradx = Graph.abs_sobel_thresh(gray, orient='x', sobel_kernel=3, thresh=(30, 100))
+        # gradx = Graph.abs_sobel_thresh(gray, orient='x', sobel_kernel=3, thresh=(30, 100))
         # find gradient over Y
-        grady = Graph.abs_sobel_thresh(gray, orient='y', sobel_kernel=3, thresh=(30, 100))
+        # grady = Graph.abs_sobel_thresh(gray, orient='y', sobel_kernel=3, thresh=(30, 100))
         # calculate magnitude of gradient
-        mag_binary = Graph.mag_thresh(gray, sobel_kernel=9, mag_thresh=(30, 100))
+        # mag_binary = Graph.mag_thresh(gray, sobel_kernel=9, mag_thresh=(30, 100))
         # calculate direction of gradient
-        dir_binary = Graph.dir_threshold(gray, sobel_kernel=15, thresh=(0.7, 1.3))
+        # dir_binary = Graph.dir_threshold(gray, sobel_kernel=15, thresh=(0.7, 1.3))
         # change image to HLS color shape and choose 3rd channel (no 2) --> S (saturation)
         hls_binary = Graph.to_hls(image, 2, thresh=(90, 255))
 
         rgb_binary = Graph.color_treshold(image, 0, (200, 255))
 
         # combine all binary channels (gradients, magnitude, direction) and saturation
-        combined = np.zeros_like(dir_binary)
+        combined = np.zeros_like(hls_binary)
         # combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1)) | (hls_binary == 1)] = 1
         combined[((hls_binary == 1) & (rgb_binary == 1))] = 1
 
@@ -64,29 +66,22 @@ class Lane():
         # undistort image
         undistorted = self.camera.undistort(image)
 
-        region = Graph.region_of_interest(undistorted, Graph.vertices_for_region(undistorted.shape))
-        mean_lightness = Graph.mean_lightness(region)
-        # print(mean_lightness)
-
-        brightned = Graph.adjust_brightness(undistorted)
+        #brightned = Graph.adjust_brightness(undistorted)
         # detect edges
-        combined = self.edge_detection(brightned)
+        combined = self.edge_detection(undistorted)
 
         # change perspective
         warped_edges, M = Graph.get_perspective_transform(combined)
         warped_frame, M = Graph.get_perspective_transform(undistorted)
 
-        # src = Graph.vertices_for_region(image.shape)
-        # dst = Graph.destination_vertices(image.shape)
-
-        # print(src, dst)
-        # Graph.draw_lines(image, src[0], color = (0, 255, 0), thickness = 4)
-        # Graph.draw_lines(image, dst[0], color = (255, 0, 0), thickness = 4)
-
         # pick 1 channel
         warped_1channel = warped_edges[:, :, 0]
         # calculate histogram
         # hist = Graph.histogram(warped_1channel)
+        # src = Graph.vertices(image.shape)
+        # dst = Graph.destination_vertices(image.shape)
+        # Graph.draw_lines(undistorted, src[0], color = (0, 255, 0), thickness = 4)
+        # Graph.draw_lines(undistorted, dst[0], color = (255, 0, 0), thickness = 4)
 
         fitted, left_fit, left_fitx, right_fit, right_fitx, ploty, avg_lane_dist, midpoint, leftx_base, rightx_base = Graph.fit_polynomial(warped_1channel)
         # update distances (width and length) of lane
@@ -95,7 +90,7 @@ class Lane():
         lane_drawn = Graph.draw_lanes(warped_frame, left_fitx, right_fitx)
         lane_reversed, M = Graph.get_perspective_transform(lane_drawn, reverse=True)
 
-        # selection = np.expand_dims(((lane_reversed[:,:,0] == 0) & (lane_reversed[:,:,1]==0) & (lane_reversed[:,:,2]==0)), axis=2)
+        # create mask for merging original image with drawn lane image got from reverse perspective transform
         mask = np.expand_dims(((lane_reversed[:,:,0] == 0) & (lane_reversed[:,:,1]==0) & (lane_reversed[:,:,2]==0)), axis=2)
         lane_reversed = mask * undistorted + (1 - mask) * lane_reversed
         lane_reversed = np.array(lane_reversed, dtype=np.uint8)
@@ -103,17 +98,18 @@ class Lane():
         # position of vehicle on lane
         lane_pos = self.__find_position_on_lane(midpoint, leftx_base, rightx_base)
         direction_text = ' to left'
-        if lane_pos > 0:
+        if lane_pos < 0:
             direction_text = ' to right'
         elif lane_pos == 0:
             direction_text = ' '
         # curvature
         l_curvature = self.__find_curvature(left_fit)
         r_curvature = self.__find_curvature(right_fit)
-        # print (l_curvature, r_curvature, lane_pos)
+        curvature = np.abs((l_curvature + r_curvature)/2)
 
+        # print texts on the frame with radius of curvature and distance from midpoint
         result = lane_reversed
-        dist_text = 'Radius of curvature = ' + str("%.2f" % l_curvature) + ' meters'
+        dist_text = 'Radius of curvature = ' + str("%.2f" % curvature) + ' meters'
         cv2.putText(result, dist_text, (50, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 3)
         dist_text = 'Distance from mid lane = ' + str("%.2f" % lane_pos) + ' meters' + direction_text
         cv2.putText(result, dist_text, (50,100), cv2.FONT_HERSHEY_COMPLEX, 1, (255,255,255), 3)
@@ -135,7 +131,12 @@ class Lane():
         d2 = d1.deriv()
         # curvature
         result = ((1 + d1(self.lane_length_m)**2)**1.5) / np.abs(d2(self.lane_length_m))
-        return result
+
+        self.curvature_hist.append(result)
+
+        if len(self.curvature_hist) > 20:
+            self.curvature_hist.pop(0)
+        return np.average(self.curvature_hist)
 
     def __find_position_on_lane(self, midpoint: int, leftx_base: int, rightx_base: int):
         '''

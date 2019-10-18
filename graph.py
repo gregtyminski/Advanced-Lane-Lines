@@ -4,16 +4,16 @@ import matplotlib.pyplot as plt
 
 
 class Graph():
-    # region of interest coefficients
+    # Region of interest coefficients used as a source region for warping original image.
     # Polygon has shape (I'll correct numbers in comment at the end):
     # ```````````````````````````````````````````
-    # `                 (0.593)                 `
-    # `      (0.47)_________________(0.52)      `
+    # `                 (0.643)                 `
+    # `      (0.45)_________________(0.55)      `
     # `           |                 \           `
     # `          |                   \          `
     # `         |                     \         `
-    # ` (0.0) ------------------------- (1.0)  `
-    # `                 (1.0)                  `
+    # ` (0.143) ---------------------- (0.857)  `
+    # `                 (1.0)                   `
     # ```````````````````````````````````````````
     LEFT_X_BOTTOM_COEF = 0.1428571429
     RIGHT_X_BOTTOM_COEF = 1.0 - LEFT_X_BOTTOM_COEF
@@ -33,44 +33,34 @@ class Graph():
 
     @staticmethod
     def to_grayscale(image: np.ndarray):
+        '''
+        Changes to grayscale.
+        :param image: 3-channel RGB image.
+        :return: 1-channel grayscale image.
+        '''
         return cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
     @staticmethod
     def to_3channel_binary(image: np.ndarray):
+        '''
+        Changes 1-channel binary image to 3-channel binary image.
+        :param image: 1-channel binary image.
+        :return: 3-channel binary image.
+        '''
         int_image = image.astype(dtype=np.uint8)
         color_binary = np.dstack((int_image, int_image, int_image)) * 255
         return color_binary
 
     @staticmethod
-    def to_1channel_binary(image: np.ndarray):
-        int_image = image.astype(dtype=np.uint8)
-        color_binary = np.dstack((int_image)) * 255
-        return color_binary
-
-    @staticmethod
-    def histogram_gray(image: np.ndarray):
-        '''
-        `image` grascaled image
-
-        Returns histogram of this image.
-        '''
-        # Grab only the bottom half of the image
-        # Lane lines are likely to be mostly vertical nearest to the car
-        sizey, sizex = image.shape
-        bottom_half = image[sizey // 2:, :]
-
-        # Sum across image pixels vertically - make sure to set an `axis`
-        # i.e. the highest areas of vertical lines should be larger values
-        histogram = np.sum(bottom_half, axis=0)
-
-        return histogram
-
-    # Define a function that applies Sobel x or y,
-    # then takes an absolute value and applies a threshold.
-    # Note: calling your function with orient='x', thresh_min=20, thresh_max=100
-    # should produce output like the example image shown above this quiz.
-    @staticmethod
     def abs_sobel_thresh(image: np.ndarray, orient: str = 'x', sobel_kernel: int = 3, thresh=(0, 255)):
+        '''
+        Method calculates Sobel x or y.
+        :param image: Image grayscaled, 1 channel of collor.
+        :param orient: Orientation 'x' or 'y' for Sobel. Detault value is 'x'
+        :param sobel_kernel: Size of the kernel. Default value is 3 (as a 3x3 px kernel).
+        :param thresh: Treshold for Sobel. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (0, 255).
+        :return: Binary (values 0..1) 1-channel image.
+        '''
         # Apply the following steps to img
         # 1) Convert to grayscale
         # gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -97,11 +87,15 @@ class Graph():
         # 6) Return this mask as your binary_output image
         return sxbinary
 
-    # Define a function that applies Sobel x and y,
-    # then computes the magnitude of the gradient
-    # and applies a threshold
     @staticmethod
     def mag_thresh(image: np.ndarray, sobel_kernel: int = 3, mag_thresh=(0, 255)):
+        '''
+        Method calculates Magnitude treshold of image.
+        :param image: Image grayscaled, 1 channel of collor.
+        :param sobel_kernel: Size of the kernel. Default value is 3 (as a 3x3 px kernel).
+        :param mag_thresh: Treshold for Magnitude. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (0, 255).
+        :return: Binary (values 0..1) 1-channel image.
+        '''
         # Apply the following steps to img
         # 1) Convert to grayscale
         # gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -123,15 +117,14 @@ class Graph():
         # 6) Return this mask as your binary_output image
         return binary_output
 
-    # Define a function that applies Sobel x and y,
-    # then computes the direction of the gradient
-    # and applies a threshold.
     @staticmethod
     def dir_threshold(image: np.ndarray, sobel_kernel: int = 3, thresh=(0, np.pi / 2)):
         '''
-        `image` image in grayscale to be processed
-        `sobel_kernel`
-        `tresh` is an array where [0] is lower treshold and [1] is upper treshold
+        Method calculates directional Sobel reshold.
+        :param image: Image grayscaled, 1 channel of collor.
+        :param sobel_kernel: Size of the kernel. Default value is 3 (as a 3x3 px kernel).
+        :param thresh: Treshold for Sobel. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (0, pi/2).
+        :return: Binary (values 0..1) 1-channel image.
         '''
         # Apply the following steps to img
         # 1) Convert to grayscale
@@ -156,6 +149,13 @@ class Graph():
         return binary_output
 
     def color_treshold(image: np.ndarray, channel: int, tresh: tuple = (200, 255)):
+        '''
+        Method calculates binary treshold of color.
+        :param image: 3-channel image.
+        :param channel: Channel number of the color, which will be tresholded.
+        :param thresh: Treshold level. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (200, 255).
+        :return: Binary (values 0..1) 1-channel image.
+        '''
         rgb_binary = np.zeros_like(image[:, :, channel])
         rgb_binary[(image[:, :, channel] >= tresh[0]) & (image[:, :, channel] <= tresh[1])] = 1
 
@@ -163,6 +163,13 @@ class Graph():
 
     @staticmethod
     def to_hls(image: np.ndarray, color_numb: int = 2, thresh=(0, 255)):
+        '''
+        Method changes image to HLS color map and calculates binary reshold in one color from HLS color map.
+        :param image: RGB 3-channel image.
+        :param color_numb: Channel number from HLS map to be tresholded. 0 for Hue; 1 for Lightness; 2 for Saturation. Default value is Saturation.
+        :param thresh: Treshold level. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (0, 255).
+        :return: Binary (values 0..1) 1-channel image.
+        '''
         # 1) Convert to HLS color space
         hls_color = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
         hls = hls_color[:, :, color_numb]
@@ -175,18 +182,17 @@ class Graph():
 
     @staticmethod
     def to_rgb(image: np.ndarray, color_numb: int = 0, thresh=(0, 255)):
+        '''
+        Method takes image in RGB color map and calculates binary reshold in one color from RGB color map.
+        :param image: RGB 3-channel image.
+        :param color_numb: Channel number from RGB map to be tresholded. 0 for Red; 1 for Green; 2 for Blue. Default value is Red.
+        :param thresh: Treshold level. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (0, 255).
+        :return: Binary (values 0..1) 1-channel image.
+        '''
         rgb = image[:, :, color_numb]
         binary_output = np.zeros_like(rgb)
         binary_output[(rgb >= thresh[0]) & (rgb <= thresh[1])] = 1
         return binary_output
-
-    @staticmethod
-    def mean_lightness(image: np.ndarray):
-        # 1) Convert to HLS color space
-        hls_color = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
-        lightness = hls_color[:, :, 1]
-        # 2) Apply a threshold to the S channel
-        return np.mean(lightness)
 
     @staticmethod
     def region_of_interest(image: np.ndarray, vertices):
@@ -196,6 +202,9 @@ class Graph():
         Only keeps the region of the image defined by the polygon
         formed from `vertices`. The rest of the image is set to black.
         `vertices` should be a numpy array of integer points.
+        :param image: 1- or 3-channel image.
+        :param vertices: Tuple with vertices of the region of interest.
+        :return: Image with cropped out region (as a black color outside the image).
         """
         copy = np.copy(image)
         # defining a blank mask to start with
@@ -228,9 +237,17 @@ class Graph():
 
     @staticmethod
     def get_perspective_transform(image: np.ndarray, reverse: bool = False):
+        '''
+        Method warpes perspective of an image, where source and destination regions are as follows:
+        src = Graph.vertices(image.shape, Graph.SOURCE_COEFFS)
+        dst = Graph.destination_vertices(image.shape, Graph.DESTINATION_COEFFS)
+        :param image: 1- or 3-channel image to warp perspective.
+        :param reverse: If 'src' or 'dst' regions shall be swapped (normal or reverse warping). If False, than normal warp. If True, than reverse warp. Default value is False.
+        :return: 1- or 3-channel image with warped perspective.
+        '''
         image_shape = image.shape
-        src = Graph.vertices_for_region(image_shape, Graph.SOURCE_COEFFS)
-        dst = Graph.destination_vertices(image_shape, Graph.DESTINATION_COEFFS)
+        src = Graph.vertices(image_shape, Graph.SOURCE_COEFFS)
+        dst = Graph.destination_vertices(image_shape)
         if not reverse:
             M = cv2.getPerspectiveTransform(src, dst)
         else:
@@ -240,15 +257,12 @@ class Graph():
         return warped, M
 
     @staticmethod
-    def destination_vertices(image_shape: tuple, coefficients: tuple = None):
+    def destination_vertices(image_shape: tuple):
         coefficients = Graph.DESTINATION_COEFFS
         ysize, xsize = image_shape[0], image_shape[1]
 
         left_coef = coefficients[0]
         right_coef = coefficients[1]
-        left_top_coef = coefficients[2]
-        right_top_coef = coefficients[3]
-        up_line_coef = coefficients[4]
         bottom_line_coef = coefficients[5]
         point1 = (int(right_coef * xsize), 0)
         point2 = (int(right_coef * xsize), int(bottom_line_coef * ysize))
@@ -259,8 +273,9 @@ class Graph():
         return vertices
 
     @staticmethod
-    def vertices_for_region(image_shape: tuple, coefficients: tuple = None):
-        coefficients = Graph.SOURCE_COEFFS
+    def vertices(image_shape: tuple, coefficients: tuple = None):
+        if coefficients is None:
+            coefficients = Graph.SOURCE_COEFFS
         ysize, xsize = image_shape[0], image_shape[1]
 
         left_coef = coefficients[0]
@@ -292,8 +307,6 @@ class Graph():
 
     def adjust_brightness(image: np.ndarray):
         hls_color = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
-        # light_binary = Graph.to_hls
-        # mean = Graph.mean_lightness(image)
 
         # sizey, sizex = hls_color.shape[0], hls_color.shape[1]
         light_channel = np.array(hls_color[:, :, 1], dtype=np.uint8)
@@ -372,10 +385,6 @@ class Graph():
 
         # Set height of windows - based on nwindows above and image shape
         window_height = np.int(binary_warped.shape[0] // nwindows)
-        # Identify the x and y positions of all nonzero pixels in the image
-        nonzero = binary_warped.nonzero()
-        nonzeroy = np.array(nonzero[0])
-        nonzerox = np.array(nonzero[1])
         # Current positions to be updated later for each window in nwindows
         leftx_current = leftx_base
         rightx_current = rightx_base

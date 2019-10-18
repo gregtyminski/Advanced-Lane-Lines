@@ -11,6 +11,10 @@ class Camera():
     def __repr__(self):
         return 'Camera()'
 
+    def __set_source_images(self, file_path: str):
+        if file_path is not None:
+            self.calibration_images = file_path
+
     def __init__(self):
         # name of the file, where pickle with calibration results are stored
         self.calibration_pickle_file_name = "calibration_pickle.p"
@@ -33,8 +37,9 @@ class Camera():
 
     def calibrate(self, chess_x: int, chess_y: int, show_result: bool = False):
         '''
-        `chess_x` pattern size in X direction
-        `chess_y` pattern size in Y direction
+        :param chess_x: pattern size in X direction
+        :param chess_y: pattern size in Y direction
+        :param show_result: if the result of calibrated camera shall be shown
         '''
 
         # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
