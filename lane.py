@@ -102,10 +102,9 @@ class Lane():
             direction_text = ' to right'
         elif lane_pos == 0:
             direction_text = ' '
-        # curvature
-        l_curvature = self.__find_curvature(left_fit)
-        r_curvature = self.__find_curvature(right_fit)
-        curvature = np.abs((l_curvature + r_curvature)/2)
+        # curvature (20 last calculations are kept and average value is returned)
+        curvature = self.__find_curvature(left_fit)
+        curvature = self.__find_curvature(right_fit)
 
         # print texts on the frame with radius of curvature and distance from midpoint
         result = lane_reversed
@@ -134,7 +133,7 @@ class Lane():
 
         self.curvature_hist.append(result)
 
-        if len(self.curvature_hist) > 20:
+        if len(self.curvature_hist) > 100:
             self.curvature_hist.pop(0)
         return np.average(self.curvature_hist)
 
