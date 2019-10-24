@@ -152,12 +152,16 @@ class Graph():
         '''
         Method calculates binary treshold of color.
         :param image: 3-channel image.
-        :param channel: Channel number of the color, which will be tresholded.
+        :param channel: Channel number of the color, which will be tresholded. If `-1` than works for all channels.
         :param thresh: Treshold level. 2 values tuple. 1st value is lower boundary. 2nd value is upper boundary. Default value is (200, 255).
         :return: Binary (values 0..1) 1-channel image.
         '''
-        rgb_binary = np.zeros_like(image[:, :, channel])
-        rgb_binary[(image[:, :, channel] >= tresh[0]) & (image[:, :, channel] <= tresh[1])] = 1
+        if channel>-1:
+            rgb_binary = np.zeros_like(image[:, :, channel])
+            rgb_binary[(image[:, :, channel] >= tresh[0]) & (image[:, :, channel] <= tresh[1])] = 1
+        elif channel==-1:
+            rgb_binary = np.zeros_like(image)
+            rgb_binary[(image >= tresh[0]) & (image <=tresh[1])] = 1
 
         return rgb_binary
 
@@ -330,16 +334,20 @@ class Graph():
         return np.concatenate(images, axis=1)
 
     @staticmethod
-    def fit_polynomial(binary_warped):
+    def fit_polynomial(binary_warped, last_left_base: int = None, last_righ_base: int = None):
         # Find our lane pixels first
-        left_points, right_points, out_img, avg_lane_dist, midpoint, leftx_base, rightx_base = Graph.find_lane_pixels(binary_warped)
+        left_points, right_points, out_img, avg_lane_dist, leftx_base, rightx_base = Graph.find_lane_pixels(binary_warped, last_left_base, last_righ_base)
 
         # fit 2nd order left line
         if len(left_points)>=3:
-            left_fit = np.polyfit(left_points[:,1], left_points[:,0], deg=2)
+            points_y = left_points[:,1]
+            points_x = left_points[:,0]
+            left_fit = np.polyfit(points_y, points_x, deg=2)
         # fit 2nd order right line
         if len(right_points)>=3:
-            right_fit = np.polyfit(right_points[:,1], right_points[:,0], deg=2)
+            points_y = right_points[:, 1]
+            points_x = right_points[:, 0]
+            right_fit = np.polyfit(points_y, points_x, deg=2)
 
         # Generate x and y values for plotting
         ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
@@ -352,15 +360,19 @@ class Graph():
             left_fitx = 1 * ploty ** 2 + 1 * ploty
             right_fitx = 1 * ploty ** 2 + 1 * ploty
 
-        return out_img, left_fit, left_fitx, right_fit, right_fitx, ploty, avg_lane_dist, midpoint, leftx_base, rightx_base
+        return out_img, left_fit, left_fitx, right_fit, right_fitx, ploty, avg_lane_dist, leftx_base, rightx_base
 
     @staticmethod
-    def find_lane_pixels(binary_warped: np.ndarray):
-        # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0)
-
+    def find_lane_pixels(binary_warped: np.ndarray, last_left_base: int = None, last_right_base: int = None):
         # Create an output image to draw on and visualize the result
         out_img = np.dstack((binary_warped, binary_warped, binary_warped))
+
+        ## just imagine the case, that the previous left and right X base of lines are wrong
+        ## we need to evaluate it's correctness, by calculating the histogram and comparing local peaks
+
+        # Take a histogram of the bottom half of the image
+        histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
+
         # Find the peak of the left and right halves of the histogram
         # These will be the starting point for the left and right lines
         midpoint = np.int(histogram.shape[0] // 2)
@@ -368,6 +380,18 @@ class Graph():
         leftx_base = np.argmax(histogram[:midpoint])
         # initial position of right line on warped image
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+
+        ## let's check how distant is new base from previous ones
+        ## we need to verify that change is less than 10%
+        ## bigger change would be a kind of exception, that should not occur
+        if last_left_base is not None:
+            if np.absolute((last_left_base - leftx_base) / leftx_base) > 0.1:
+                # x base differs more than 10%
+                leftx_base = last_left_base
+        if last_right_base is not None:
+            if np.absolute((last_left_base - rightx_base) / rightx_base) > 0.1:
+                # x base differs more than 10%
+                rightx_base = last_right_base
 
         # HYPERPARAMETERS
         # Choose the number of sliding windows
@@ -393,6 +417,8 @@ class Graph():
         left_lane_points = []
         right_lane_points = []
 
+        min_pixels = 10*255 # 10 pixels with value 255
+
         # Step through the windows one by one
         for window in range(nwindows):
             # Identify window boundaries in x and y (and right and left)
@@ -402,14 +428,25 @@ class Graph():
             win_xleft_high = leftx_current + margin
             win_xright_low = rightx_current - margin
             win_xright_high = rightx_current + margin
+            if win_xleft_low<0:
+                win_xleft_low=0
+            if win_y_low<0:
+                win_y_low=0
 
             # find center of the 'lane region'
             left_area = binary_warped[win_y_low:win_y_high, win_xleft_low:win_xleft_high]
             right_area = binary_warped[win_y_low:win_y_high, win_xright_low:win_xright_high]
             l_area_hist = np.sum(left_area, axis=0)
             r_area_hist = np.sum(right_area, axis=0)
-            l_x_index = np.argmax(l_area_hist) + win_xleft_low
-            r_x_index = np.argmax(r_area_hist) + win_xright_low
+
+            if np.max(l_area_hist) > min_pixels:
+                l_x_index = np.argmax(l_area_hist) + win_xleft_low
+            else:
+                l_x_index = None
+            if np.max(r_area_hist) > min_pixels:
+                r_x_index = np.argmax(r_area_hist) + win_xright_low
+            else:
+                r_x_index = None
             y_index = int((win_y_low + win_y_high) / 2)
 
             # didn't find center
@@ -442,14 +479,14 @@ class Graph():
             ## Visualization ##
             # Colors in the left and right lane regions
             # Draw the windows on the visualization image
-            # cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            # cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
             # yellow center points
             cv2.circle(out_img, l_point, 2, yellow_color, thickness=2, lineType=8)
             cv2.circle(out_img, r_point, 2, yellow_color, thickness=2, lineType=8)
 
         avg_lane_dist = np.average(lane_dist_hist)
-        return np.array(left_lane_points), np.array(right_lane_points), out_img, avg_lane_dist, midpoint, leftx_base, rightx_base
+        return np.array(left_lane_points), np.array(right_lane_points), out_img, avg_lane_dist, leftx_base, rightx_base
 
     @staticmethod
     def draw_lanes(binary_warped: np.ndarray, left_fitx: np.ndarray, right_fitx: np.ndarray):
@@ -472,6 +509,5 @@ class Graph():
         # fill area between
         all_points = np.vstack((l_points, np.flipud(r_points)))
         pts = np.array(all_points, np.int32)
-        #print(pts.shape)
         cv2.fillConvexPoly(binary_warped, pts, green_color)
         return binary_warped

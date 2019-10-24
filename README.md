@@ -136,6 +136,8 @@ All the magic in _Find lane pixels_ happens inside the method `Graph.find_lane_p
 #### a) histogram
 When we have perspective warped to bird eye view, we need calculate histogram over y-axis.
 `histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0)`
+However, histogram is calculated only on first frame.
+After first frame, the position of left and right lane is kept and processing next frame starts from same area without calculation of histogram.
 
 Within the histogram we need to detect position of both lanes
 ```python
@@ -232,7 +234,8 @@ lane_pos = self.__find_position_on_lane(midpoint, leftx_base, rightx_base)
 
 Finding radius of curvature is a bit more complicated.
 For each line on each frame radius is calculated using this [formula](https://www.intmath.com/applications-differentiation/8-radius-curvature.php) which is implemented in `l_curvature = self.__find_curvature(left_fit)`
-20 calculated radius values are kept in history of radiuses and average value is returned.
+50 calculated radius values are kept in history of radiuses and average value is returned.
+Radius of curvature is adjusted to real one by multiplying by constant value that is strongly dependent on the shape of original source region used to warp perspective.
 
 ### 11. Print radius of curvature and position on the image
 The very last step is just to print text on a frame with calculated values.
